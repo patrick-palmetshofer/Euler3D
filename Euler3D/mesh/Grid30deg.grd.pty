@@ -1,0 +1,17 @@
+1 Blocks 
+#B bid b-pty b-lbid f_i-pty f_i-lbid f_I-pty f_I-lbid ...
+B 1 1 -1 1002 -1 4002 -1 3002 -1 2002 -1 6002 -1 5002 -1  
+ 0 labels 
+ 9 0 2D properties (used, max-id) 
+ 0 unused (pdc:DEFAULT)
+ 1 ws.Interblock (pdc:INTERBLK)
+ 2 ws.Wall (pdc:WALL)
+ 1002 surface_1 (pdc:WALL)
+ 2002 surface_2 (pdc:WALL)
+ 3002 surface_3 (pdc:WALL)
+ 4002 surface_4 (pdc:WALL)
+ 5002 surface_5 (pdc:WALL)
+ 6002 surface_6 (pdc:WALL)
+ 2 0 3D properties (used, max-id) 
+ 0 unused (pdc:DEFAULT)
+ 1 ws.Fluid (pdc:Fluid)
