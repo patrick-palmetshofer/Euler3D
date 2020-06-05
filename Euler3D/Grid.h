@@ -4,56 +4,51 @@
 class Grid
 {
 private:
+	const int dims = 3;
 	//Numbers of cells in both computational directions, excluding ghost cells
-	int nxi_cells;
-	int neta_cells;
+	IndArray ncomp_cells;
 
 	//2D Vector of points. 
-	Eigen::Matrix<Eigen::Array2d,-1,-1> points;
+	GridTensor<DirVector> points;
 
-	Eigen::Array2d maxDistance;
+	DirVector maxDistance;
 
 	//Face normal vector components for each computational direction (2 physical directions each)
-	ValueMatrix2D nxi_xs;
-	ValueMatrix2D nxi_ys;
-	ValueMatrix2D neta_xs;
-	ValueMatrix2D neta_ys;
+	Eigen::Array<GridTensor<Eigen::Vector3d>, 3, 1> ncomp_phys;
 
 	//Face areas in both computational directions
-	ValueMatrix2D Sxis;
-	ValueMatrix2D Setas;
+	Eigen::Array<ValueTensor,3,1> face_areas;
 
 	//Volumes of cells in domain
-	ValueMatrix2D volumes;
+	ValueTensor volumes;
 public:
 	Grid();
 	~Grid();
 
-	Eigen::Array2d getPoint(int i, int j) { return points(i,j);	};
+	DirVector getPoint(int i, int j, int k) { return points(i)(j)(k);	};
+	DirVector getPoint(IndArray &ind) { return points(ind[0])(ind[1])(ind[2]); };
+	const GridTensor<DirVector>& getPoints() { return points; };
 
 	double getMaxDistance(int dim) { return maxDistance[dim]; };
 
-	int getnxiCells() { return nxi_cells; };
-	int getnetaCells() { return neta_cells; };
+	Eigen::Array3i getnComponentCells() { return ncomp_cells; };
+	int getnComponentCells(int dim) { 
+		return ncomp_cells(dim); };
 
-	int getnComponentCells(int dim) { return dim ? neta_cells : nxi_cells; };
+	double getFaceArea(int i, int j, int k, int dim) { return face_areas(dim)(i)(j)(k); };
+	double getFaceArea(IndArray ind, int dim) { return face_areas(dim)(ind[0])(ind[1])(ind[2]); };
 
-	double getnXiXs(int i, int j) { return nxi_xs(i,j); };
-	double getnEtaXs(int i, int j) { return neta_xs(i,j); };
-	double getnXiYs(int i, int j) { return nxi_ys(i,j); };
-	double getnEtaYs(int i, int j) { return neta_ys(i,j); };
+	double getVolume(int i, int j, int k) { return volumes(i)(j)(k); };
 
-	double getSxi(int i, int j) { return Sxis(i,j); };
-	double getSeta(int i, int j) { return Setas(i,j); };
+	double getnComponent(int i, int j, int k, int comp, int phys) { return ncomp_phys(comp)(i)(j)(k)(phys); }
+	Eigen::Vector3d getnVec(int i, int j, int k, int comp) { return ncomp_phys(comp)(i)(j)(k); }
+	Eigen::Vector3d getnVec(IndArray ind, int comp) { return ncomp_phys(comp)(ind[0])(ind[1])(ind[2]); }
 
-	double getVolume(int i, int j) { return volumes(i,j); };
-
-	double getnComponent(int i, int j, int compdim, int physdim);
-
-	void readCGNS(std::string filename);
 
 	//Reads GridPro grid file (Warning, no treatment of Gridpro Boundary Conditions)
 	void readGridPro(std::string filename);
+	void readCGNS(std::string filename);
+
 	void allocate();
 };
 

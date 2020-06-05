@@ -2,6 +2,20 @@
 #include <fstream>
 #include <iostream>
 
+#include "CGNSwrapper.h"
+
+#ifdef _WIN32
+#include <io.h> 
+#define access    _access_s
+#else
+#include <unistd.h>
+#endif
+
+bool FileExists(const std::string &filename)
+{
+	return access(filename.c_str(), 0) == 0;
+}
+
 Solution::Solution()
 {
 }
@@ -12,136 +26,74 @@ Solution::~Solution()
 }
 
 //Residuals calculation. Either returning the maximum residual or residual in each variable.
-double Solution::calcResidualL2(StateMatrix2D &o, StateMatrix2D &n)
+StateVector Solution::calcResidualsL2(StateTensor &o, StateTensor &n)
 {
-	double sumres = 0;
-	for (int i = 0; i < n.rows(); i++)
+	StateVector sumres;
+	for (int i = 0; i < n.size(); i++)
 	{
-		for (int j = 0; j < n.cols(); j++)
+		for (int j = 0; j < n(0).size(); j++)
 		{
-			for (int k = 0; k < 4; k++)
+			for (int k = 0; k < n(0)(0).size(); k++)
 			{
-				double normk = o(0,0)[k];
-				if (k == 1 || k == 2)
-					normk = o(0, 0)[1] + o(0, 0)[2];
-				double temp = (n(i,j)[k] - o(i,j)[k]) / normk;
-				sumres += temp * temp;
+				auto temp = (n(i)(j)(k) - o(i)(j)(k)) / ref_state.array();
+				sumres += temp.matrix().squaredNorm();
 			}
 		}
 	}
-	if (sumres < 0)
-		throw;
-	sumres = std::sqrt(sumres);
+
+	sumres = (sumres / (n.size()*n(0).size()*n(0)(0).size())).sqrt();
+	v_residuals_L2.push_back(sumres);
 	return sumres;
 }
 
-StateVector2D Solution::calcResidualsL2(StateMatrix2D &o, StateMatrix2D &n)
+StateVector Solution::calcResidualsLinfty(StateTensor &o, StateTensor &n)
 {
-	StateVector2D res;
-	for (int k = 0; k < n(0,0).size(); k++)
+	StateVector res;
+	for (int i = 0; i < n.size(); i++)
 	{
-		double sumres = 0;
-		double normk = o(0, 0)[k];
-		if (k == 1 || k == 2)
-			normk = o(0, 0)[1] + o(0, 0)[2];
-
-		for (int i = 0; i < n.rows(); i++)
+		for (int j = 0; j < n(0).size(); j++)
 		{
-			for (int j = 0; j < n.cols(); j++)
+			for (int k = 0; k < n(0)(0).size(); k++)
 			{
-				double temp = (n(i,j)[k] - o(i,j)[k]) / normk;
-				sumres += temp * temp;
+				auto temp = (n(i)(j)(k) - o(i)(j)(k)) / ref_state.array();
+				for (int m = 0; m < n(i)(j)(k).size(); ++m)
+				{
+					if (temp[m] > res[m])
+						res[m] = temp[m];
+				}
 			}
 		}
-
-		if (sumres < 0)
-			throw;
-
-		sumres = std::sqrt(sumres);
-		res[k] = sumres;
 	}
+	res = (res / (n.size()*n(0).size()*n(0)(0).size())).sqrt();
 	v_residuals_L2.push_back(res);
 	return res;
 }
 
-double Solution::calcResidualLinfty(StateMatrix2D &o, StateMatrix2D &n)
-{
-	double res = 0;
-	int imax, jmax, kmax;
-	for (int i = 0; i < n.rows(); i++)
-	{
-		for (int j = 0; j < n.cols(); j++)
-		{
-			for (int k = 0; k < n(0,0).size(); k++)
-			{
-				double normk = o(0, 0)[k];
-				if (k == 1 || k == 2)
-					normk = o(0, 0)[1] + o(0, 0)[2];
-				double temp = std::abs((n(i,j)[k] - o(i,j)[k]) / normk);
-				if (temp > res)
-				{
-					imax = i;
-					jmax = j;
-					kmax = k;
-					res = temp;
-				}
-			}
-		}
-	}
-	return res;
-}
 
-StateVector2D Solution::calcResidualsLinfty(StateMatrix2D &o, StateMatrix2D &n)
-{
-	StateVector2D res;
-	int imax, jmax, kmax;
-	for (int k = 0; k < 4; k++)
-	{
-		res[k] = 0;
-		double normk = o(0, 0)[k];
-		if (k == 1 || k == 2)
-			normk = o(0, 0)[1] + o(0, 0)[2];
-		for (int i = 0; i < n.rows(); i++)
-		{
-			for (int j = 0; j < n.cols(); j++)
-			{
-				double temp = std::abs((n(i,j)[k] - o(i,j)[k]) / normk);
-				if (temp > res[k])
-				{
-					imax = i;
-					jmax = j;
-					kmax = k;
-					res[k] = temp;
-				}
-			}
-		}
-	}
-	v_residuals_Linfty.push_back(res);
-	return res;
-}
-
-
-StateVector2D Solution::getResidualsL2()
+StateVector Solution::getResidualsL2()
 {
 	return residuals_L2;
 }
 
-StateVector2D Solution::getResidualsLinfty()
+StateVector Solution::getResidualsLinfty()
 {
 	return residuals_Linfty;
 }
 
-void Solution::writeSolution(std::string filename, StateMatrix2D &c)
+void Solution::writeRaw(std::string filename, StateTensor &c)
 {
 	//Write a set of primitive variables, with Temperature in place of e_t
-	if(p.size() != c.size())
-		p.resize(c.rows(), c.cols());
-	for (int i = 0; i < p.rows(); i++)
+	if (p.size() != c.size())
+		p = StateTensor(c);
+	for (int i = 0; i < c.size(); i++)
 	{
-		for (int j = 0; j < p.cols(); j++)
+		for (int j = 0; j < c(0).size(); j++)
 		{
-			p(i,j) = fluid->cons2prim(c(i,j));
-			p(i,j)[3] = (p(i,j)[3] - 0.5*(p(i,j)[2] * p(i,j)[2] + p(i,j)[1] * p(i,j)[1]))*fluid->getGamma() / fluid->getCp();
+			for (int k = 0; k < c(0)(0).size(); k++)
+			{
+				p(i)(j)(k) = fluid->cons2prim(c(i)(j)(k));
+				p(i)(j)(k).tail(1) = fluid->getTemperature(c(i)(j)(k));
+			}
 		}
 	}
 
@@ -149,19 +101,20 @@ void Solution::writeSolution(std::string filename, StateMatrix2D &c)
 	std::ofstream stream;
 	try
 	{
-		stream.open(filename+".sol", std::ofstream::out);
-		stream << p.rows() << ",\t" << p.cols() << "\n";
-		stream << "rho" << ",\t" << "u" << ",\t" << "v" << ",\t" << "T" << "\n";
+		stream.open(filename + ".sol", std::ofstream::out);
+		stream << p.size() << ",\t" << p(0).size() << ",\t" << p(0)(0).size() << "\n";
+		stream << "rho" << ",\t" << "u" << ",\t" << "v" << ",\t" << "w" << ",\t" << "T" << "\n";
 		//Reserve add here
-		for (int i = 0; i < p.rows(); i++)
+		for (int i = 0; i < p.size(); i++) 
 		{
-			for (int j = 0; j < p.cols(); j++)
+			for (int j = 0; j < p(0).size(); j++) 
 			{
-				for (int k = 0; k < 3; k++)
+				for (int k = 0; k < p(0)(0).size(); k++) 
 				{
-					stream << p(i,j)[k] << ",\t";
+					for (int dim = 0; dim < p(0)(0)(0).size() - 1; ++dim)
+						stream << p(i)(j)(k)[dim] << ",\t";
+					stream << p(i)(j)(k)[p(0)(0)(0).size() - 1] << "\n";
 				}
-				stream << p(i,j)[3] << "\n";
 			}
 		}
 		stream.flush();
@@ -170,21 +123,45 @@ void Solution::writeSolution(std::string filename, StateMatrix2D &c)
 	catch (std::ofstream::failure e) {
 		std::cerr << "Exception writing file\n";
 	}
+}
+
+void writeCGNS(std::string filename, Grid * grid, StateTensor &c)
+{
+	CGNSwrapper cgns;
+	cgns.writeSingleBlockStructured(filename, grid->getPoints(), c);
+}
+
+void writeCGNS(std::string filename, StateTensor &c)
+{
+	CGNSwrapper cgns;
+	cgns.modifySingleBlockStructured(filename, c);		
+}
+
+void Solution::writeSolution(std::string filename, Grid * grid, StateTensor &c)
+{
+	writeCGNS(filename, grid, c);
 	writeResidual(v_residuals_L2, filename + "_L2.res");
 	writeResidual(v_residuals_Linfty, filename + "_Linfty.res");
 }
 
-void Solution::writeSolution(StateMatrix2D & c)
+void Solution::writeSolution(std::string filename, StateTensor &c)
+{
+	writeCGNS(filename, c);
+	writeResidual(v_residuals_L2, filename + "_L2.res");
+	writeResidual(v_residuals_Linfty, filename + "_Linfty.res");
+}
+
+void Solution::writeSolution(StateTensor & c)
 {
 	writeSolution(filename, c);
 }
 
-void Solution::writeSolution(StateMatrix2D & c, int i)
+void Solution::writeSolution(StateTensor & c, int i)
 {
 	writeSolution(filename+std::to_string(i), c);
 }
 
-void Solution::writeResidual(std::vector<StateVector2D> &residuals, std::string filename)
+void Solution::writeResidual(std::vector<StateVector> &residuals, std::string filename)
 {
 	std::ofstream stream;
 	try

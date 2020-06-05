@@ -25,25 +25,25 @@ PerfectGas::~PerfectGas()
 {
 }
 
-double PerfectGas::getSoundSpeed(const StateVector2D &prim)
+double PerfectGas::getSoundSpeed(const StateVector &prim)
 {
 	double T = getTemperature(prim);
 	return std::sqrt(gamma*R*T);
 }
 
-double PerfectGas::getPressure(const StateVector2D &prim)
+double PerfectGas::getPressure(const StateVector &prim)
 {
-	return prim[0]*R*getTemperature(prim);
+	return prim[4]*R*getTemperature(prim);
 }
 
-double PerfectGas::getTemperature(const StateVector2D &prim)
+double PerfectGas::getTemperature(const StateVector &prim)
 {
-	return prim[3]/cv;
+	return prim[4]/cv;
 }
 
-double PerfectGas::getEnthalpy(const StateVector2D &prim)
+double PerfectGas::getEnthalpy(const StateVector &prim)
 {
-	return gamma*prim[3];
+	return gamma*prim[4];
 }
 
 double PerfectGas::getGamma()
@@ -57,76 +57,71 @@ double PerfectGas::getCp()
 }
 
 //Functions to convert between conservative and primitive variables
-StateVector2D PerfectGas::prim2cons(const StateVector2D & p)
+StateVector PerfectGas::prim2cons(const StateVector & p)
 {
-	StateVector2D c;
+	StateVector c;
 	c[0] = p[0];
-	c[1] = p[0] * p[1];
-	c[2] = p[0] * p[2];
-	c[3] = p[0] * p[3];
+	for (int i = 1; i < 5; ++i)
+		c[i] = p[0] * p[i];
 	return c;
 }
 
-StateVector2D PerfectGas::cons2prim(const StateVector2D & c)
+StateVector PerfectGas::cons2prim(const StateVector & c)
 {
-	StateVector2D p;
+	StateVector p;
 	p[0] = c[0];
-	p[1] = c[1] / c[0];
-	p[2] = c[2] / c[0];
-	p[3] = c[3] / c[0];
+	for (int i = 1; i < 5; ++i)
+		p[i] = c[i] / c[0];
 	return p;
 }
 
-StateVector2D PerfectGas::user2cons(double p, double u, double v, double T)
+StateVector PerfectGas::user2cons(double p, const DirVector &u, double T)
 {
 	//Easy input variables to conservative
 	double e = cp / gamma * T;
-	double et = e + 0.5*(u*u + v * v);
+	double et = e + calcKineticU(u);
 	double rho = p / ((gamma - 1)*e);
-	StateVector2D prim = { rho,u,v,et };
-	StateVector2D cons = prim2cons(prim);
+	StateVector prim;
+	prim << rho, u[0], u[1], u[2], et;
+	StateVector cons = prim2cons(prim);
 	return cons;
 }
 
 //Functions to calculate physical properties (and charactersitic variables) from conservative/primite variables
-double PerfectGas::calcPcons(const StateVector2D & c)
+double PerfectGas::calcPcons(const StateVector & c)
 {
-	double p = (gamma - 1)*(c[3] - 0.5*(c[1] * c[1] + c[2] * c[2]) / c[0]);
+	double p = (gamma - 1)*(c[4] - calcKineticState(c) / c[0]);
 	return p;
 }
 
-double PerfectGas::calcMacons(const StateVector2D & c)
+double PerfectGas::calcMacons(const StateVector & c)
 {
-	double Ma = std::sqrt(c[1] * c[1] + c[2] * c[2]) / (c[0] * calcSoundSpeedcons(c));
+	double Ma = std::sqrt(calcKineticState(c)) / (c[0] * calcSoundSpeedcons(c));
 	return Ma;
 }
 
-double PerfectGas::calcSoundSpeedcons(const StateVector2D &c)
+double PerfectGas::calcSoundSpeedcons(const StateVector &c)
 {
-	double sound = std::sqrt((gamma - 1)*gamma*(c[3] - 0.5*(c[1] * c[1] + c[2] * c[2]) / c[0]) / c[0]);
+	double sound = std::sqrt((gamma - 1)*gamma*(c[4] - calcKineticState(c) / c[0]) / c[0]);
 	return sound;
 }
 
-double PerfectGas::calcPprim(const StateVector2D & prim)
+double PerfectGas::calcPprim(const StateVector & prim)
 {
-	double p = prim[0] * (gamma - 1)*(prim[3] - 0.5*(prim[1] * prim[1] + prim[2] * prim[2]));
+	double p = prim[0] * (gamma - 1)*(prim[4] - calcKineticState(prim));
 	return p;
 }
 
 //Calculate physical flux without numerical dissipation scheme
-StateVector2D PerfectGas::calcPhysFlux(const StateVector2D & c, Eigen::Vector2d& n)
+StateVector PerfectGas::calcPhysFlux(const StateVector & c, DirVector &n)
 {
-	double &nx = n[0];
-	double &ny = n[1];
-	return calcPhysFlux(c, nx, ny);
-}
-
-StateVector2D PerfectGas::calcPhysFlux(const StateVector2D & c, double nx, double ny)
-{
-	StateVector2D flux;
-	flux[0] = c[1] * nx + c[2] * ny;
-	flux[1] = c[1] * c[1] / c[0] * nx + c[1] * c[2] / c[0] * ny + (gamma - 1)*(c[3] - 0.5*(c[1] * c[1] + c[2] * c[2]) / c[0])*nx;
-	flux[2] = c[2] * c[1] / c[0] * nx + c[2] * c[2] / c[0] * ny + (gamma - 1)*(c[3] - 0.5*(c[1] * c[1] + c[2] * c[2]) / c[0])*ny;
-	flux[3] = (gamma*c[3] - 0.5*(gamma - 1)*(c[1] * c[1] + c[2] * c[2]) / c[0])*(c[1] * nx + c[2] * ny) / c[0];
+	StateVector flux;
+	flux[0] = c.segment(1,3).matrix().dot(n);
+	flux.segment(1,3) = c.segment(1,3) / c[0] * flux[0] + (gamma - 1)*(c[4] - calcKineticState(c) / c[0])*n.array();
+	flux[4] = (gamma*c[4] - 0.5*(gamma - 1)*(calcKineticState(c)) / c[0])*flux[0] / c[0];
 	return flux;
+
+	//flux[1] = c[1] / c[0] * flux[0] + (gamma - 1)*(c[4] - 0.5*(calcKineticState(c)) / c[0])*n(0);
+	//flux[2] = c[2] / c[0] * flux[0] + (gamma - 1)*(c[4] - 0.5*(calcKineticState(c)) / c[0])*n(1);
+	//flux[3] = c[3] / c[0] * flux[0] + (gamma - 1)*(c[4] - 0.5*(calcKineticState(c)) / c[0])*n(2);
 }

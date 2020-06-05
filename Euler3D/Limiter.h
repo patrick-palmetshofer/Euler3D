@@ -7,33 +7,33 @@ public:
 	virtual ~Limiter();
 
 	//Limiter function using the ratio. Can lead to problems with 0/0 inputs
-	StateVector2D limiter(const StateVector2D &r);
+	StateVector limiter(const StateVector &r);
 
 	//Limiter function using explicit values. Returns Limiter function in terms of r
-	virtual StateVector2D limiter(const StateVector2D & x, const StateVector2D & y) = 0;
+	virtual StateVector limiter(const StateVector & x, const StateVector & y) = 0;
 };
 
 class LimiterMinmod :
 	public Limiter
 {
 public:
-	StateVector2D limiter(const StateVector2D & x, const StateVector2D & y);
+	StateVector limiter(const StateVector & x, const StateVector & y);
 };
 
 class LimiterVanAlbada :
 	public Limiter
 {
-	StateVector2D limiter(const StateVector2D & x, const StateVector2D & y);
+	StateVector limiter(const StateVector & x, const StateVector & y);
 };
 
 class LimiterMonotoneCentered :
 	public Limiter
 {
-	StateVector2D limiter(const StateVector2D & x, const StateVector2D & y);
+	StateVector limiter(const StateVector & x, const StateVector & y);
 };
 
 class NoLimiter :
 	public Limiter
 {
-	StateVector2D limiter(const StateVector2D & x, const StateVector2D & y) { StateVector2D ret = { 1,1,1,1 }; return ret; };
+	StateVector limiter(const StateVector & x, const StateVector & y) { StateVector ret; ret << 1, 1, 1, 1, 1; return ret; };
 };

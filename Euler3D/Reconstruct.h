@@ -5,23 +5,21 @@
 class Reconstruct
 {
 protected:
-	StateVector2D reconstruct_left, reconstruct_right;
+	StateVector reconstruct_left, reconstruct_right;
 	Grid * grid;
 
-	StateMatrix2D * conservative;
+	StateTensor * conservative;
 public:
 	Reconstruct();
 	virtual ~Reconstruct();
 
-	void setConservative(StateMatrix2D * cons) { conservative = cons; };
+	void setConservative(StateTensor * cons) { conservative = cons; };
 
 	void setGrid(Grid * new_grid) { grid = new_grid; };
 
-	std::pair<StateVector2D, StateVector2D> reconstructStates(const StateVector2D & c_left, const StateVector2D & c_right);
+	std::pair<StateVector, StateVector> reconstructStates(const StateVector & c_left, const StateVector & c_right);
 
-	virtual std::pair<StateVector2D, StateVector2D> reconstructStates(int i, int j, int dim);
-	std::pair<StateVector2D, StateVector2D> reconstructStatesXi(int i, int j);
-	std::pair<StateVector2D, StateVector2D> reconstructStatesEta(int i, int j);
+	virtual std::pair<StateVector, StateVector> reconstructStates(int i, int j, int k, Eigen::Array3i& dim_arr);
 };
 
 

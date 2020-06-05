@@ -9,6 +9,9 @@ public:
 	CGNSwrapper();
 	~CGNSwrapper();
 
-	void readSingleBlockStructured(std::string filename, Eigen::Matrix<Eigen::Array2d, -1, -1>& points);
+	void readSingleBlockStructured(std::string filename, GridTensor<DirVector>& points);
+	void modifySingleBlockStructured(std::string filename, StateTensor & solution);
+	void modifySingleBlockStructured(std::string filename, GridTensor<DirVector>& points, StateTensor & solution);
+	void writeSingleBlockStructured(std::string filename, const GridTensor<DirVector>& points, StateTensor & solution);
 };
 

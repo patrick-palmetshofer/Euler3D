@@ -140,14 +140,13 @@ void Config::solverRead(const std::vector<std::string>& strings)
 			solver->setImplicit(std::stod(val));
 		else if (key == "flux")
 		{
-			std::unique_ptr<Flux> xi_flux, eta_flux;
+			Eigen::Array<std::unique_ptr<Flux>,3,1> fluxes;
 			if (val == "roe:")
 			{
-				xi_flux = std::make_unique<FluxRoe>(0);
-				eta_flux = std::make_unique<FluxRoe>(1);
+				for (int dim = 0; dim < 3; ++dim)
+					fluxes[dim] = std::make_unique<FluxRoe>(dim);
 			}
-			solver->setXiFluxes(xi_flux);
-			solver->setEtaFluxes(eta_flux);
+			solver->setFluxes(fluxes);
 		}
 		else if (key == "reconstruct")
 		{
@@ -210,6 +209,10 @@ void assignBoundary(T sref, Boundary * b)
 		b->setRight();
 	else if (val == "left")
 		b->setLeft();
+	else if (val == "front")
+		b->setFront();
+	else if (val == "back")
+		b->setBack();
 	else
 		throw;
 }
@@ -244,6 +247,8 @@ void Config::boundaryRead(const std::vector<std::string>& strings)
 		std::string key = s.substr(0, pos);
 		std::string val = s.substr(pos+1);
 
+		if (iBC > nBC)
+			throw;
 		if (val == "slipwall:")
 		{
 			boundaries.at(iBC) = std::make_unique<SlipWall>();
@@ -274,8 +279,9 @@ void Config::boundaryRead(const std::vector<std::string>& strings)
 		}
 		else if (val == "supersonicinlet:")
 		{
-			double p, u, v, T;
-			for (auto i = 0; i < 4; i++)
+			double p, T;
+			DirVector uvec;
+			for (auto i = 0; i < 5; i++)
 			{
 				auto &states = *(sref + 2 + i);
 				std::size_t statepos = states.find('=');
@@ -285,13 +291,15 @@ void Config::boundaryRead(const std::vector<std::string>& strings)
 				if (statekey == "p")
 					p = std::stod(stateval);
 				else if (statekey == "u")
-					u = std::stod(stateval);
+					uvec[0] = std::stod(stateval);
 				else if (statekey == "v")
-					v = std::stod(stateval);
+					uvec[1] = std::stod(stateval);
+				else if (statekey == "w")
+					uvec[2] = std::stod(stateval);
 				else if (statekey == "t")
 					T = std::stod(stateval);
 			}
-			StateVector2D cons = fluid->user2cons(p, u, v, T);
+			StateVector cons = fluid->user2cons(p, uvec, T);
 			boundaries.at(iBC) = std::make_unique<SupersonicInlet>(cons);
 			assignBoundary(sref, boundaries.at(iBC).get());
 			iBC++;
@@ -308,7 +316,8 @@ void Config::boundaryRead(const std::vector<std::string>& strings)
 
 void Config::initalRead(const std::vector<std::string>& strings)
 {
-	double p = 1e5, u = 0, v = 0, T = 300;
+	double p = 1e5, T = 300;
+	DirVector uvec;
 	for (auto &s : strings)
 	{
 		std::size_t pos = s.find("=");
@@ -327,14 +336,16 @@ void Config::initalRead(const std::vector<std::string>& strings)
 		else if (key == "p")
 			p = std::stod(val);
 		else if (key == "u")
-			u = std::stod(val);
+			uvec[0] = std::stod(val);
 		else if (key == "v")
-			v = std::stod(val);
+			uvec[1] = std::stod(val);
+		else if (key == "w")
+			uvec[2] = std::stod(val);
 		else if (key == "T")
 			T = std::stod(val);
 	}
 	solver->setFluid(fluid);
-	solver->setConsInitial(p, u, v, T);
+	solver->setConsInitial(p, uvec, T);
 }
 
 void Config::solutionRead(const std::vector<std::string>& strings)

@@ -11,6 +11,6 @@ public:
 	TimeStepperGlobal();
 	~TimeStepperGlobal();
 
-	void execute(StateMatrix2D * conservative, StateMatrix2D * xi_fluxes, StateMatrix2D * eta_fluxes);
+	void execute(StateTensor * conservative, Eigen::Array<StateTensor *, 3, 1> fluxes);
 };
 

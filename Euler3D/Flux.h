@@ -6,8 +6,8 @@
 class Flux
 {
 private:
-	std::pair<StateVector2D, StateVector2D> leftrightstates;
-	StateVector2D flux;
+	std::pair<StateVector, StateVector> leftrightstates;
+	StateVector flux;
 protected:
 	Reconstruct * reconstruct;
 	Fluid * fluid;
@@ -16,9 +16,12 @@ protected:
 	//Dimension of the flux object: 1 for Xi, 2 for Eta
 	const int dim;
 
+	Eigen::Array3i dim_arr;
+	Eigen::Array3i max_inds;
+
 	//Fluxes at Faces and Conservative variables of all cells
-	StateMatrix2D fluxes;
-	StateMatrix2D *conservative;
+	StateTensor fluxes;
+	StateTensor *conservative;
 
 	template<typename T>
 	T swap(T &data)
@@ -26,7 +29,7 @@ protected:
 		return Euler::swap(data, dim+1);
 	}
 
-	//std::pair<StateVector2D, StateVector2D> reconstruct(int i, int j);
+	//std::pair<StateVector, StateVector> reconstruct(int i, int j, int k);
 
 public:
 	Flux(int new_dim);
@@ -35,10 +38,11 @@ public:
 	void setFluid(Fluid * new_fluid) { fluid = new_fluid; };
 	void setReconstruct(Reconstruct * new_reconstruct) { reconstruct = new_reconstruct; };
 	void setGrid(Grid * new_grid) { grid = new_grid; };
-	void setConservative(StateMatrix2D * cons);
-	void setBoundaryFlux(int i, int j, StateVector2D flux) { fluxes(i,j) = flux; };
+	void setConservative(StateTensor * cons);
+	void setBoundaryFlux(int i, int j, int k, StateVector flux) { fluxes(i)(j)(k) = flux; };
+	void setBoundaryFlux(IndArray &ind, StateVector flux) { fluxes(ind[0])(ind[1])(ind[2]) = flux; };
 
-	StateMatrix2D * get() { return &fluxes; };
+	StateTensor * get() { return &fluxes; };
 
 	//Calculate fluxes of all faces.
 	//Xi=const faces
@@ -48,13 +52,13 @@ public:
 
 	int getDim() { return dim; };
 
-	StateVector2D calcFlux(std::pair<StateVector2D, StateVector2D> leftrightstates, double nx, double ny);
+	StateVector calcFlux(std::pair<StateVector, StateVector> leftrightstates, DirVector &n);
 
 	//Flux calculation
 	//Previous method calls:
 	//Calculate physical fluxes without numerical dissipation
-	StateVector2D calcPhysFlux(const StateVector2D & c, double nx, double ny);
+	StateVector calcPhysFlux(const StateVector & c, DirVector &n);
 	//Calculate numerical dissipation
-	virtual StateVector2D calcDissip(std::pair<StateVector2D, StateVector2D> leftrightstates, double nx, double ny) = 0;
+	virtual StateVector calcDissip(std::pair<StateVector, StateVector> leftrightstates, DirVector &n) = 0;
 };
 

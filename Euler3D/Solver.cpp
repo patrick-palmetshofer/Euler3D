@@ -32,7 +32,7 @@ Solver::Solver(std::string filename) : Solver()
 
 void Solver::initSizeFromGrid()
 {
-	conservative.resize(grid->getnxiCells(), grid->getnetaCells());
+	Euler::resize(conservative, grid->getnComponentCells());
 }
 
 //Destructor. As everything is implemented using STL containers, data deallocation is handled by STL
@@ -51,6 +51,15 @@ std::vector<std::unique_ptr<Boundary>>* Solver::setBoundaries(std::vector<std::u
 	return &boundaries;
 }
 
+Eigen::Array<std::unique_ptr<Flux>,3, 1>* Solver::setFluxes(Eigen::Array<std::unique_ptr<Flux>,3,1>& new_fluxes)
+{
+	for (int dim = 0; dim < 3; ++dim)
+	{
+		fluxes[dim] = std::move(new_fluxes[dim]);
+	}
+	return nullptr;
+}
+
 void Solver::crossPopulatePointers()
 {
 	stepper->setGrid(grid.get());
@@ -61,37 +70,36 @@ void Solver::crossPopulatePointers()
 
 	solution->setFluid(fluid.get());
 
-	xi_fluxes->setFluid(fluid.get());
-	xi_fluxes->setGrid(grid.get());
-	xi_fluxes->setReconstruct(reconstruct.get());
-
-	eta_fluxes->setFluid(fluid.get());
-	eta_fluxes->setGrid(grid.get());
-	eta_fluxes->setReconstruct(reconstruct.get());
+	for (int dim = 0; dim < 3; ++dim)
+	{
+		fluxes[dim]->setFluid(fluid.get());
+		fluxes[dim]->setGrid(grid.get());
+		fluxes[dim]->setReconstruct(reconstruct.get());
+	}
 
 	for (auto &b : boundaries)
 		b->setGrid(grid.get());
 }
 
 //Sets conservative variables at inlet, takes user primitive variables
-void Solver::setConsInlet(double p, double u, double v, double T)
+void Solver::setConsInlet(double p, const DirVector &uvec, double T)
 {
-	cons_inlet = fluid->user2cons(p, u, v, T);
+	cons_inlet = fluid->user2cons(p, uvec, T);
 }
 
 //Sets conservative variables at initial time, takes user primitive variables
 //Sets all cells in domain to the specified value
-void Solver::setConsInitial(double p, double u, double v, double T)
+void Solver::setConsInitial(double p, const DirVector &uvec, double T)
 {
 	p_infty = p;
-	cons_initial = fluid->user2cons(p, u, v, T);
+	cons_initial = fluid->user2cons(p, uvec, T);
 	setInitialCondition();
 }
 
 //Takes cons-initial Solver parameter and sets all cells in domain to these conditions
 void Solver::setInitialCondition()
 {
-	conservative.fill(cons_initial);
+	Euler::fill(conservative, cons_initial);
 }
 
 double Solver::getTime()
@@ -101,7 +109,7 @@ double Solver::getTime()
 
 void Solver::allocateConservative()
 {
-	conservative.resize(grid->getnxiCells(), grid->getnetaCells());
+	Euler::resize(conservative, grid->getnComponentCells());
 }
 
 void Solver::solve()
@@ -116,47 +124,53 @@ void Solver::solve()
 		throw;
 	if (!solution)
 		throw;
-	if (!xi_fluxes)
-		throw;
-	if (!eta_fluxes)
-		throw;
+	for (int dim = 0; dim < 3; ++dim)
+	{
+		if (!fluxes[dim])
+			throw;
+		flux_tensors[dim] = fluxes[dim]->get();
+	}
+	
 
 	allocateConservative();
 	setInitialCondition();
 
 	for (auto &b : boundaries)
 	{
-		if (b->getDim() == xi_fluxes->getDim())
-			b->setFlux(xi_fluxes.get());
-		else if (b->getDim() == eta_fluxes->getDim())
-			b->setFlux(eta_fluxes.get());
-		else
-			throw;
+		for (int dim = 0; dim < 3; ++dim)
+		{
+			if (b->getDim() == fluxes[dim]->getDim())
+				b->setFlux(fluxes[dim].get());
+		}
 		b->setConservative(&conservative);
 		b->setFluid(fluid.get());
 		b->init();
 	}
 	reconstruct->setConservative(&conservative);
 	reconstruct->setGrid(grid.get());
-	xi_fluxes->setConservative(&conservative);
-	eta_fluxes->setConservative(&conservative);
+	for (int dim = 0; dim < 3; ++dim)
+	{
+		fluxes[dim]->setConservative(&conservative);
+	}
 	for (int i = 0; i <= maxIter; i++)
 	{
-		//StateVector2D calcFluxMUSCL(const StateVector2D & c_left_left, const StateVector2D & c_left, const StateVector2D & c_right, const StateVector2D & c_right_right, double nx, double ny);
-		//StateVector2D calcFluxMUSCL(const StateVector2D & c_left_left, const StateVector2D & c_left, const StateVector2D & c_right, const StateVector2D & c_right_right, double Sx_left_left, double Sx_left, double Sx_right, double Sx_right_right, double nx, double ny);
+		//StateVector calcFluxMUSCL(const StateVector & c_left_left, const StateVector & c_left, const StateVector & c_right, const StateVector & c_right_right, DirVector &n);
+		//StateVector calcFluxMUSCL(const StateVector & c_left_left, const StateVector & c_left, const StateVector & c_right, const StateVector & c_right_right, double Sx_left_left, double Sx_left, double Sx_right, double Sx_right_right, DirVector &n);
 		for (auto &b : boundaries)
 			b->apply();
 
 		//Calculate fluxes
-		xi_fluxes->calcFluxes();
-		eta_fluxes->calcFluxes();
-
-		//Euler::checkNaN(xi_fluxes->get());
-		//Euler::checkNaN(eta_fluxes->get());
+		//#pragma omp parallel for
+		for (int dim = 0; dim < 3; ++dim)
+		{
+			fluxes[dim]->calcFluxes();
+			if (Euler::checkNaN(fluxes[dim]->get()))
+				throw;
+		}
 
 		old_conservative = conservative;
 
-		stepper->execute(&conservative, xi_fluxes->get(), eta_fluxes->get());
+		stepper->execute(&conservative, flux_tensors);
 
 		if (Euler::checkNaN(&conservative))
 		{
@@ -168,6 +182,9 @@ void Solver::solve()
 		solution->calcResidualsLinfty(old_conservative,conservative);
 		
 		if (i % iter_write_interval == 0 || Euler::checkNaN(&conservative))
-			solution->writeSolution(conservative,i);
+		{
+			//solution->writeSolution(conservative, i);
+			solution->writeSolution("solution/newbump.cgns", grid.get(), conservative);
+		}
 	}
 }

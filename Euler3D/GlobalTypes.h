@@ -9,11 +9,16 @@
 #include <Eigen/Dense>
 
 //Generalized State Vector specified to 2 dimensions
-using StateVector2D = Eigen::Array4d;
+using StateVector = Eigen::Array<double,5,1>;
+using DirVector = Eigen::Vector3d;
+using IndArray = Eigen::Array3i;
+
+template <typename T>
+using GridTensor = Eigen::Array<Eigen::Array<Eigen::Array<T, -1, 1>, -1, 1>, -1, 1>;
 
 //Matrices of StateVectors or Values defined on the grid
-using ValueMatrix2D = Eigen::MatrixXd;
-using StateMatrix2D = Eigen::Matrix<StateVector2D, -1, -1>;
+using ValueTensor = GridTensor<double>;
+using StateTensor = GridTensor<StateVector>;
 //using Matrix2D = std::vector<std::vector<std::vector<stateVector2D>>>;
 
 //template <uint ndim>
@@ -23,6 +28,35 @@ using StateMatrix2D = Eigen::Matrix<StateVector2D, -1, -1>;
 
 namespace Euler
 {
+	template<typename T>
+	void resize(T &grid, IndArray max_inds)
+	{
+		grid.resize(max_inds[0]);
+		for (int i = 0; i < max_inds[0]; i++)
+		{
+			grid[i].resize(max_inds[1]);
+			for (int j = 0; j < max_inds[1]; j++)
+			{
+				grid[i][j].resize(max_inds[2]);
+			}
+		}
+	}
+
+	template<typename T>
+	void fill(GridTensor<T> &grid, T value)
+	{
+		for (int i = 0; i < grid.size(); i++)
+		{
+			for (int j = 0; j < grid(0).size(); j++)
+			{
+				for (int k = 0; k < grid(0)(0).size(); k++)
+				{
+					grid(i)(j)(k) = value;
+				}
+			}
+		}
+	}
+
 	//Utilities to swap coordinates in Statevectors
 	template<typename T>
 	T swap(T &data, int ind1, int ind2)
@@ -42,7 +76,7 @@ namespace Euler
 	}
 
 
-	inline bool checkNaN(StateVector2D *m)
+	inline bool checkNaN(StateVector *m)
 	{
 		for (int k = 0; k < m->size(); k++)
 		{
@@ -55,21 +89,25 @@ namespace Euler
 	}
 
 	//Checks for errors in matrices, used for debugging
-	inline bool checkNaN(StateMatrix2D *m)
+	inline bool checkNaN(StateTensor *m)
 	{
-		size_t xi_size = m->rows();
-		size_t eta_size = (*m).cols();
+		size_t xi_size = m->size();
+		size_t eta_size = (*m)(0).size();
+		size_t zeta_size = (*m)(0)(0).size();
 		for (int i = 0; i < xi_size; i++)
 		{
 			for (int j = 0; j < eta_size; j++)
 			{
-				if (checkNaN(&(*m)(i,j)))
-					return true;
+				for (int k = 0; k < zeta_size; k++)
+				{
+					if (checkNaN(&(*m)(i)(j)(k)))
+						return true;
+				}
 			}
 		}
 		return false;
 	}
-}
+};
 
 
 //namespace std {

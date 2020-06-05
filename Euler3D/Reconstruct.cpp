@@ -11,34 +11,14 @@ Reconstruct::~Reconstruct()
 {
 }
 
-std::pair<StateVector2D, StateVector2D> Reconstruct::reconstructStates(const StateVector2D& c_left, const StateVector2D& c_right)
+std::pair<StateVector, StateVector> Reconstruct::reconstructStates(const StateVector& c_left, const StateVector& c_right)
 {
 	return std::make_pair(c_left, c_right);
 }
 
-std::pair<StateVector2D, StateVector2D> Reconstruct::reconstructStates(int i, int j, int dim)
+std::pair<StateVector, StateVector> Reconstruct::reconstructStates(int i, int j, int k, Eigen::Array3i& dim_arr)
 {
-	int ineg = i;
-	int jneg = j;
-	if (dim == 0)
-	{
-		ineg--;
-	}
-	else if (dim == 1)
-	{
-		jneg--;
-	}
-	else
-		throw;
-	return reconstructStates((*conservative)(ineg,jneg), (*conservative)(i,j));
-}
-
-std::pair<StateVector2D, StateVector2D> Reconstruct::reconstructStatesXi(int i, int j)
-{
-	return reconstructStates(i, j, 0);
-}
-
-std::pair<StateVector2D, StateVector2D> Reconstruct::reconstructStatesEta(int i, int j)
-{
-	return reconstructStates(i, j, 1);
+	Eigen::Array3i ijkneg = { i,j,k };
+	ijkneg -= dim_arr;
+	return reconstructStates((*conservative)(ijkneg[0])(ijkneg[1])(ijkneg[2]), (*conservative)(i)(j)(k));
 }

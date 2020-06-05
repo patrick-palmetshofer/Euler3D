@@ -11,17 +11,18 @@ Limiter::~Limiter()
 {
 }
 
-StateVector2D Limiter::limiter(const StateVector2D & r)
+StateVector Limiter::limiter(const StateVector & r)
 {
-	StateVector2D y = { 1,1,1,1 };
+	StateVector y;
+	y << 1, 1, 1, 1, 1;
 	return limiter(r, y);
 }
 
 
 //Safer form of the minmod limiter
-StateVector2D LimiterMinmod::limiter(const StateVector2D &x, const StateVector2D &y)
+StateVector LimiterMinmod::limiter(const StateVector &x, const StateVector &y)
 {
-	StateVector2D phis;
+	StateVector phis;
 	for (int i = 0; i < x.size(); i++)
 	{
 		double xi = x[i];
@@ -42,9 +43,9 @@ StateVector2D LimiterMinmod::limiter(const StateVector2D &x, const StateVector2D
 
 
 //Monotone centered limiter
-StateVector2D LimiterMonotoneCentered::limiter(const StateVector2D &x, const StateVector2D &y)
+StateVector LimiterMonotoneCentered::limiter(const StateVector &x, const StateVector &y)
 {
-	StateVector2D phis;
+	StateVector phis;
 	for (int i = 0; i < x.size(); i++)
 	{
 		double r = x[i]/y[i];
@@ -58,9 +59,9 @@ StateVector2D LimiterMonotoneCentered::limiter(const StateVector2D &x, const Sta
 	return phis;
 }
 
-StateVector2D LimiterVanAlbada::limiter(const StateVector2D &x, const StateVector2D &y)
+StateVector LimiterVanAlbada::limiter(const StateVector &x, const StateVector &y)
 {
-	StateVector2D phis;
+	StateVector phis;
 	for (int i = 0; i < x.size(); i++)
 	{
 		double xi = x[i];

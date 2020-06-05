@@ -35,149 +35,139 @@ void Boundary::setLeft()
 	dir = 1;
 }
 
+void Boundary::setFront()
+{
+	dim = 2;
+	dir = 1;
+}
+
+void Boundary::setBack()
+{
+	dim = 2;
+	dir = -1;
+}
+
+void Boundary::setDimDir(int dim, int dir)
+{
+	this->dim = dim;
+	this->dir = dir;
+}
+
 void Boundary::init()
 {
 	if (cell_inds.empty())
 	{
-		if (dim == 0)
+		int dirind = 0;
+		
+		//For dim = 0; offdims are 1,2 and so on
+		int nondim1 = 0, nondim2 = 1;
+		switch (dim)
 		{
-			int dirind = 0;
-			if (dir == -1)
-				dirind = grid->getnxiCells();
-			for (int i = 0; i < grid->getnetaCells(); i++)
-				cell_inds.push_back({ dirind, i });
+		case 0:
+			nondim1++;
+		case 1:
+			nondim2++;
 		}
-		else if (dim == 1)
+
+		//Get directional index
+		if (dir == -1)
+			dirind = grid->getnComponentCells(dim);
+
+		cell_inds.reserve(grid->getnComponentCells(nondim1)*grid->getnComponentCells(nondim2));
+		for (int i1 = 0; i1 < grid->getnComponentCells(nondim1); i1++)
 		{
-			int dirind = 0;
-			if (dir == -1)
-				dirind = grid->getnetaCells();
-			for (int i = 0; i < grid->getnxiCells(); i++)
-				cell_inds.push_back({ i, dirind });
+			for (int i2 = 0; i2 < grid->getnComponentCells(nondim2); i2++)
+			{
+				IndArray temp(0,0,0);
+				temp[dim] = dirind;
+				temp[nondim1] = i1;
+				temp[nondim2] = i2;
+				cell_inds.push_back(temp);
+			}
 		}
-		else
-			throw;
 	}
+	dir_arr.fill(0);
+	dir_arr[dim] = dir;
 }
 
 void Boundary::apply()
 {
-	std::pair<StateVector2D, StateVector2D> leftrightstates;
-	int physdim1 = 0, physdim2 = 1;
-	if (dim == 1) 
-	{
-		physdim1++; physdim2--;
-	}
+	std::pair<StateVector, StateVector> leftrightstates;
 
-	for (auto &inds : cell_inds)
+	std::vector<StateVector> fl_test;
+	fl_test.reserve((cell_inds.size()));
+
+	for (auto &ind : cell_inds)
 	{
 		if (dir == 1)
 		{
-			leftrightstates.second = (*conservative)(inds[0],inds[1]);
-			leftrightstates.first = getGhostState(inds);
+			leftrightstates.second = (*conservative)(ind[0])(ind[1])(ind[2]);
+			leftrightstates.first = getGhostState(ind);
 		}
 		else if (dir == -1)
 		{
-			std::array<int,2> locinds = { inds[0] - physdim2, inds[1] - physdim1 };
-			leftrightstates.first = (*conservative)(locinds[0],locinds[1]);
-			leftrightstates.second = getGhostState(locinds);
+			IndArray locind = ind + dir_arr;
+			leftrightstates.first = (*conservative)(locind[0])(locind[1])(locind[2]);
+			leftrightstates.second = getGhostState(locind);
 		}
 
 		leftrightstates.first = Euler::swap(leftrightstates.first, dim + 1);
 		leftrightstates.second = Euler::swap(leftrightstates.second, dim + 1);
 
-		StateVector2D fl = flux->calcFlux(leftrightstates, grid->getnComponent(inds[0], inds[1], dim, physdim1), grid->getnComponent(inds[0], inds[1], dim, physdim2));
-		flux->setBoundaryFlux(inds[0], inds[1], Euler::swap(fl,dim+1));
+		DirVector n0 = grid->getnVec(ind, dim);
+		DirVector n = Euler::swap(n0, 0, dim);
+
+		StateVector flswapped = flux->calcFlux(leftrightstates, n);
+		StateVector fl = Euler::swap(flswapped, dim + 1);
+		if (Euler::checkNaN(&fl))
+			throw;
+		flux->setBoundaryFlux(ind, fl);
 	}
+	auto a = fl_test.size();
 }
 
-StateVector2D SupersonicInlet::getGhostState(std::array<int, 2> ind)
+StateVector SupersonicInlet::getGhostState(IndArray& ind)
 {
 	return in_state;
 }
 
-StateVector2D SlipWall::getGhostState(std::array<int, 2> ind)
+StateVector SlipWall::getGhostState(IndArray& ind)
 {
-	int i = ind[0];
-	int j = ind[1];
-	int ineg = i, jneg = j;
-	double nx = 0, ny = 0;
-	switch (dim)
-	{
-	case 0:
-		ineg += dir;
-		nx = grid->getnXiXs(i, j);
-		ny = grid->getnXiYs(i, j);
-		break;
-	case 1:
-		jneg += dir;
-		nx = grid->getnEtaXs(i, j);
-		ny = grid->getnEtaYs(i, j);
-		break;
-	}
+	DirVector n = grid->getnVec(ind, dim);
 
-	double unorm = (*conservative)(i,j)[1] * nx + (*conservative)(i,j)[2]* ny;
-	ghost_state[0] = (*conservative)(i,j)[0];
-	ghost_state[1] = (*conservative)(i,j)[1] - 2 * unorm*nx;
-	ghost_state[2] = (*conservative)(i,j)[2] - 2 * unorm*ny;
-	ghost_state[3] = (*conservative)(i,j)[3];
+	double unorm = (*conservative)(ind[0])(ind[2])(ind[2]).matrix().segment(1,3).dot(n);
+
+	ghost_state = (*conservative)(ind[0])(ind[2])(ind[2]);
+	ghost_state.segment(1, 3) -= 2 * unorm*n.array();
 
 	return ghost_state;
 }
 
-StateVector2D SupersonicOutlet::getGhostState(std::array<int, 2> ind)
+StateVector SupersonicOutlet::getGhostState(IndArray &ind)
 {
-	int i = ind[0];
-	int j = ind[1];
-	int ineg = i, jneg = j;
-	double nx = 0, ny = 0;
-	switch (dim)
-	{
-	case 0:
-		ineg += dir;
-		nx = grid->getnXiXs(i, j);
-		ny = grid->getnXiYs(i, j);
-		break;
-	case 1:
-		jneg += dir;
-		nx = grid->getnEtaXs(i, j);
-		ny = grid->getnEtaYs(i, j);
-		break;
-	}
-	ghost_state = (*conservative)(i,j);
-	
+	DirVector n = grid->getnVec(ind, dim);
+	ghost_state = (*conservative)(ind[0])(ind[2])(ind[2]);
+
 	return ghost_state;
 }
 
-StateVector2D BoundaryLODI::getGhostState(std::array<int, 2> ind)
+StateVector BoundaryLODI::getGhostState(IndArray &ind)
 {
-	int i = ind[0];
-	int j = ind[1];
-	int ineg = i, jneg = j;
-	double nx = 0, ny = 0;
-	switch (dim)
-	{
-	case 0:
-		ineg += dir;
-		nx = grid->getnXiXs(i, j);
-		ny = grid->getnXiYs(i, j);
-		break;
-	case 1:
-		jneg += dir;
-		nx = grid->getnEtaXs(i, j);
-		ny = grid->getnEtaYs(i, j);
-		break;
-	}
+	DirVector n = grid->getnVec(ind, dim);
 
-	StateVector2D &c = (*conservative)(i,j);
-	StateVector2D &cneg = (*conservative)(ineg,jneg);
+	IndArray indpos = ind + dir_arr;
+
+	StateVector &c = (*conservative)(indpos[0])(indpos[1])(indpos[2]);
+	StateVector &cneg = (*conservative)(ind[0])(ind[1])(ind[2]);
 
 	/*	cpos = c + (c - cneg);*/
 	double u = c[2] / c[0];
 	double sound = fluid->calcSoundSpeedcons(c);
 	double rho = c[0];
 
-	double dx = (grid->getPoint(i,j)[dim] - grid->getPoint(ineg, jneg)[dim]);
+	double dx = grid->getPoint(indpos)[dim]- grid->getPoint(ind)[dim];
+	if (dx == 0)
+		dx = 1;
 
 	double drho = c[0] - cneg[0];
 	double dp = fluid->calcPcons(c) - fluid->calcPcons(cneg);
@@ -188,12 +178,13 @@ StateVector2D BoundaryLODI::getGhostState(std::array<int, 2> ind)
 	double p = fluid->calcPcons(c);
 
 	double ppos = p + dx * 0.5*(L5 / (u + sound) + L1 / (u - sound));
-	StateVector2D prim = fluid->cons2prim(c);
-	StateVector2D primpos;
+	StateVector prim = fluid->cons2prim(c);
+	StateVector primpos;
 	primpos[0] = prim[0] + dx * (L2 / u + 0.5*(L5 / (u + sound) + L1 / (u - sound))) / (sound*sound);
 	primpos[1] = prim[1] + dx * (L5 / (u + sound) - L1 / (u - sound)) / (2 * sound*rho);
 	primpos[2] = prim[2] + dx * L3 / u;
-	primpos[3] = ppos / ((fluid->getGamma() - 1)*primpos[0]) + 0.5*(primpos[1] * primpos[1] + primpos[2] * primpos[2]);
+	primpos[3] = prim[3] + dx * L4 / u;
+	primpos[4] = ppos / ((fluid->getGamma() - 1)*primpos[0]) + 0.5*primpos.segment(1, 3).matrix().squaredNorm();
 
 	ghost_state = fluid->prim2cons(primpos);
 
@@ -201,15 +192,17 @@ StateVector2D BoundaryLODI::getGhostState(std::array<int, 2> ind)
 		ghost_state = c + (c - cneg);
 	}
 
-	Euler::checkNaN(&ghost_state);
+	if (Euler::checkNaN(&ghost_state))
+		throw;
 	return ghost_state;
 }
 
-void Outlet::calcWaveStrengths(double u, double sound, double rho, double dx, double drho, double dp, double du, StateVector2D& c, StateVector2D& cneg)
+void Outlet::calcWaveStrengths(double u, double sound, double rho, double dx, double drho, double dp, double du, StateVector& c, StateVector& cneg)
 {
 	L1 = (u - sound)*(dp - rho * sound*du) / dx;
 	L2 = u * (sound*sound*drho - dp) / dx;
-	L3 = u * (c[1] / c[0] - cneg[1] / cneg[0]) / dx;
+	L3 = u * (c[2] / c[0] - cneg[2] / cneg[0]) / dx;
+	L4 = u * (c[3] / c[0] - cneg[3] / cneg[0]) / dx;
 	L5 = (u + sound)*(dp + rho * sound*du) / dx;
 
 	double p = fluid->calcPcons(c);

@@ -17,32 +17,13 @@ Grid::~Grid()
 {
 }
 
-double Grid::getnComponent(int i, int j, int compdim, int physdim)
-{
-	if (compdim == 0)
-	{
-		if (physdim == 0)
-			return getnXiXs(i, j);
-		else if (physdim == 1)
-			return getnXiYs(i, j);
-	}
-	else if (compdim == 1)
-	{
-		if (physdim == 0)
-			return getnEtaXs(i, j);
-		else if (physdim == 1)
-			return getnEtaYs(i, j);
-	}
-	throw;
-	return std::numeric_limits<double>::infinity();
-}
-
 void Grid::readCGNS(std::string filename)
 {
 	CGNSwrapper cgns;
 	cgns.readSingleBlockStructured(filename,points);
-	nxi_cells = points.rows()-1;
-	neta_cells = points.cols()-1;
+	ncomp_cells[0] = (int) points.size()-1;
+	ncomp_cells[1] = (int) points(0).size()-1;
+	ncomp_cells[2] = (int) points(0)(0).size()-1;
 	allocate();
 }
 
@@ -52,8 +33,7 @@ void Grid::readGridPro(std::string filename)
 	std::ifstream stream;
 
 	//Number of points in both computational directions
-	int nxi_points;
-	int neta_points;
+	IndArray n_points;
 	//std::vector<std::vector<Eigen::Array2D>> points;
 
 	try
@@ -61,27 +41,45 @@ void Grid::readGridPro(std::string filename)
 		stream.open(filename, std::ifstream::in);
 		if (stream.fail())
 			throw;
-		stream >> nxi_points;
-		stream >> neta_points;
-		int zpoints;
-		stream >> zpoints;
+		stream >> n_points[1];
+		stream >> n_points[0];
+		stream >> n_points[2];
 
-		nxi_cells = nxi_points - 1;
-		neta_cells = neta_points - 1;
+		ncomp_cells = n_points - 1;
 
-		points.resize(nxi_points, neta_points);
-		double zcord;
+		std::vector<std::vector<std::vector<std::array<double, 3>>>> testpoints;
 
+		Euler::resize(testpoints, n_points);
 
-		for (int i = 0; i < nxi_points; i++)
+		Euler::resize(points,n_points);
+		for (int j = n_points[1] - 1; j >= 0; j--)
 		{
-			for (int j = 0; j < neta_points; j++)
+			for (int i = n_points[0] - 1; i >= 0; i--)
 			{
-				stream >> points(i,j)[0];
-				stream >> points(i,j)[1];
-				stream >> zcord;
+				for (int k = n_points[2] - 1; k >= 0; k--)
+				{
+					stream >> points(i)(j)(k)[0];
+					stream >> points(i)(j)(k)[1];
+					stream >> points(i)(j)(k)[2];
+
+					testpoints[i][j][k][0] = points(i)(j)(k)[0];
+					testpoints[i][j][k][1] = points(i)(j)(k)[1];
+					testpoints[i][j][k][2] = points(i)(j)(k)[2];
+				}
 			}
 		}
+		//for (int j = 0; j < n_points[1]; j++)
+		//{
+		//	for (int i = 0; i < n_points[0]; i++)
+		//	{
+		//		for (int k = 0; k < n_points[2]; k++)
+		//		{
+		//			stream >> points(i)(j)(k)[0];
+		//			stream >> points(i)(j)(k)[1];
+		//			stream >> points(i)(j)(k)[2];
+		//		}
+		//	}
+		//}
 		stream.close();
 	}
 	catch (std::ifstream::failure e) {
@@ -92,69 +90,91 @@ void Grid::readGridPro(std::string filename)
 
 void Grid::allocate()
 {
-	//Allocate all matrices
-	nxi_xs.resize(nxi_cells + 1, neta_cells);
-	nxi_ys.resize(nxi_cells + 1, neta_cells);
-	Sxis.resize(nxi_cells + 1, neta_cells);
-
-	neta_xs.resize(nxi_cells, neta_cells + 1);
-	neta_ys.resize(nxi_cells, neta_cells + 1);
-	Setas.resize(nxi_cells, neta_cells + 1);
-
-	volumes.resize(nxi_cells, neta_cells);
-
-
-	//Fill matrices
-	for (int i = 0; i < nxi_cells; i++)
+	//Allocate all matrices, Allocates 1 too much in each direction. Possibly better nonethless due to data locality
+	ncomp_phys.resize(dims);
+	for (int dim = 0; dim < dims; ++dim)
 	{
-		for (int j = 0; j < neta_cells + 1; j++)
+		//Fill matrices
+		IndArray max_arr = ncomp_cells;
+		++max_arr[dim];
+
+		Euler::resize(ncomp_phys(dim), max_arr);
+		Euler::resize(face_areas(dim), max_arr);
+
+		std::array<DirVector, 2> face_vec;
+
+		for (int i = 0; i < max_arr[0]; i++)
 		{
-			double Setax = -(points(i + 1, j)[1] - points(i, j)[1]);
-			double Setay = (points(i + 1, j)[0] - points(i, j)[0]);
+			for (int j = 0; j < max_arr[1]; j++)
+			{
+				for (int k = 0; k < max_arr[2]; k++)
+				{
+					IndArray ind = { i,j,k };
 
-			double Seta = std::sqrt(Setax*Setax + Setay * Setay);
+					//Calculate Face Parallel Vectors
+					int n = 0;
+					for (int m = 0; m < dims; ++m)
+					{
+						if (m != dim) //Only use elements which are not the computational element
+						{
+							IndArray indplus = ind;
+							indplus[m] = ind[m] + 1;
+							auto plusp = points(indplus[0])(indplus[1])(indplus[2]);
+							auto p = points(i)(j)(k);
+							face_vec[n] = plusp - p;
+							n++;
+						}
+					}
 
-			neta_xs(i, j) = Setax / Seta;
-			neta_ys(i, j) = Setay / Seta;
+					auto Scomp_phys = face_vec[0].cross(face_vec[1]);
+					//if (dim == 1)
+					//	Scomp_phys = face_vec[1].cross(face_vec[0]);
+					double Scomp = Scomp_phys.norm();
 
-			Setas(i, j) = Seta;
+					if (Scomp == 0)
+						throw;
+
+					ncomp_phys(dim)(i)(j)(k) = Scomp_phys / Scomp;
+
+					face_areas(dim)(i)(j)(k) = Scomp;
+				}
+			}
 		}
 	}
-	for (int i = 0; i < nxi_cells + 1; i++)
+
+	Eigen::Matrix3d mat;
+
+	Euler::resize(volumes, ncomp_cells);
+	for (int i = 0; i < ncomp_cells[0]; ++i)
 	{
-		for (int j = 0; j < neta_cells; j++)
+		for (int j = 0; j < ncomp_cells[1]; ++j)
 		{
-			double Sxix = points(i, j + 1)[1] - points(i, j)[1];
-			double Sxiy = -(points(i, j + 1)[0] - points(i, j)[0]);
-
-			double Sxi = std::sqrt(Sxix*Sxix + Sxiy * Sxiy);
-
-			nxi_xs(i, j) = Sxix / Sxi;
-			nxi_ys(i, j) = Sxiy / Sxi;
-
-			Sxis(i, j) = Sxi;
+			for (int k = 0; k < ncomp_cells[2]; ++k)
+			{
+				mat.col(0) = (points(i + 1)(j)(k) - points(i)(j)(k));
+				mat.col(1) = (points(i)(j + 1)(k) - points(i)(j)(k));
+				mat.col(2) = (points(i)(j)(k + 1) - points(i)(j)(k));
+				volumes[i][j][k] = std::abs(mat.determinant());
+			}
 		}
 	}
 
-	for (int i = 0; i < nxi_cells; i++)
+	DirVector max, min;
+	max.fill(0);
+	min.fill(1e9);
+	for (int i = 0; i < points.size(); ++i)
 	{
-		for (int j = 0; j < neta_cells; j++)
+		for (int j = 0; j < points(0).size(); ++j)
 		{
-			volumes(i, j) = std::abs(0.5*((points(i + 1, j + 1)[0] - points(i, j)[0])*(points(i, j + 1)[1] - points(i + 1, j)[1]) - (points(i, j + 1)[0] - points(i + 1, j)[0])*(points(i + 1, j + 1)[1] - points(i, j)[1])));
+			for (int k = 0; k < points(0)(0).size(); ++k)
+			{
+				for (int dim = 0; dim < DirVector().size(); ++dim)
+				{
+					max[dim] = std::max(max[dim], points(i)(j)(k)[dim]);
+					min[dim] = std::min(min[dim], points(i)(j)(k)[dim]);
+				}
+			}
 		}
 	}
-
-	double xmax = 0, xmin = 0, ymax = 0, ymin = 0;
-	for (int i = 0; i < points.rows(); ++i)
-	{
-		for (int j = 0; j < points.cols(); ++j)
-		{
-			xmax = std::max(xmax, points(i, j)[0]);
-			xmin = std::min(xmin, points(i, j)[0]);
-			ymax = std::max(ymax, points(i, j)[1]);
-			ymin = std::min(ymin, points(i, j)[1]);
-
-		}
-	}
-	maxDistance = { xmax - xmin,ymax - ymin };
+	maxDistance = max - min;
 }

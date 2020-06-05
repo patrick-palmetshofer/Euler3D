@@ -16,9 +16,10 @@ private:
 	std::unique_ptr<Reconstruct> reconstruct;
 	std::unique_ptr<Fluid> fluid;
 	std::unique_ptr<Solution> solution;
-	std::unique_ptr<Flux> xi_fluxes;
-	std::unique_ptr<Flux> eta_fluxes;
+	std::array<std::unique_ptr<Flux>, 3> fluxes;
 	std::vector<std::unique_ptr<Boundary>> boundaries;
+
+	Eigen::Array<StateTensor *, 3, 1> flux_tensors;
 
 	double time_write_interval;
 	int iter_write_interval;
@@ -40,15 +41,15 @@ private:
 	double maxIter;
 
 	//conservative variables for Inlet and initial condition
-	StateVector2D cons_inlet;
-	StateVector2D cons_initial;
-	//StateMatrix2D primitive;
+	StateVector cons_inlet;
+	StateVector cons_initial;
+	//StateTensor primitive;
 
-	//StateMatrix2D xi_face_prim;
-	//StateMatrix2D eta_face_prim;
+	//StateTensor xi_face_prim;
+	//StateTensor eta_face_prim;
 
-	StateMatrix2D conservative;
-	StateMatrix2D old_conservative;
+	StateTensor conservative;
+	StateTensor old_conservative;
 
 	//Treatment of Boundary conditions. Hard coded :(
 	//First-order (constant boundary) conditions
@@ -76,9 +77,8 @@ public:
 	Grid * setGrid(std::unique_ptr<Grid>& new_grid) { return set(new_grid, grid); };
 	Fluid * setFluid(std::unique_ptr<Fluid>& new_fluid) { return set(new_fluid, fluid); };
 	Solution * setSolution(std::unique_ptr<Solution>& new_solution) { return set(new_solution, solution); };
-	Flux * setXiFluxes(std::unique_ptr<Flux>& new_xi_fluxes) { return set(new_xi_fluxes, xi_fluxes); };
-	Flux * setEtaFluxes(std::unique_ptr<Flux>& new_eta_fluxes) { return set(new_eta_fluxes, eta_fluxes); };
 	std::vector<std::unique_ptr<Boundary>> * setBoundaries(std::vector<std::unique_ptr<Boundary>>& new_boundaries);
+	Eigen::Array<std::unique_ptr<Flux>,3, 1> * setFluxes(Eigen::Array<std::unique_ptr<Flux>,3,1> &new_fluxes);
 
 	void crossPopulatePointers();
 
@@ -90,8 +90,8 @@ public:
 	void setSodYInitial();
 
 	//Set initial and boundary condition values for initialization
-	void setConsInlet(double p, double u, double v, double T);
-	void setConsInitial(double p, double u, double v, double T);
+	void setConsInlet(double p, const DirVector &uvec, double T);
+	void setConsInitial(double p, const DirVector &uvec, double T);
 
 	//Fill all cells with initial condition
 	void setInitialCondition();
@@ -120,16 +120,16 @@ public:
 	void solve();
 
 	// Deprecated prototypes
-	//StateVector2D calcFlux();
-	//StateVector2D spaceDisc(int i, int j);
-	//StateVector2D spaceDisc(const StateVector2D & c, double nx, double ny);
-	//StateVector2D calcFlux(const StateVector2D & c, double nx, double ny);
-	//StateVector2D calcPhysFluxesXi();
-	//StateVector2D mainloop();
-	//StateVector2D calcDissip();
-	//void physicalFluxRight(const StateVector2D &c);
-	//void physicalFluxUp(const StateVector2D &c);
-	//void RoeDissipRight(int i, int j);
-	//StateVector2D calcPhysFlux(const StateVector2D & prim_left, const StateVector2D & prim_right, double nx, double ny);
+	//StateVector calcFlux();
+	//StateVector spaceDisc(int i, int j, int k);
+	//StateVector spaceDisc(const StateVector & c, DirVector &n);
+	//StateVector calcFlux(const StateVector & c, DirVector &n);
+	//StateVector calcPhysFluxesXi();
+	//StateVector mainloop();
+	//StateVector calcDissip();
+	//void physicalFluxRight(const StateVector &c);
+	//void physicalFluxUp(const StateVector &c);
+	//void RoeDissipRight(int i, int j, int k);
+	//StateVector calcPhysFlux(const StateVector & prim_left, const StateVector & prim_right, DirVector &n);
 };
 

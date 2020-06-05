@@ -9,15 +9,15 @@ protected:
 	Fluid * fluid;
 
 	//Calculate time step for global time stepping
-	double calcTimeStep(StateMatrix2D * conservative);
+	double calcTimeStep(StateTensor * conservative);
 	//Method calls:
 	//Calculate timestep for local timestepping
-	double calcTimeStep(int i, int j, StateMatrix2D * conservative);
+	double calcTimeStep(int i, int j, int k, StateTensor * conservative);
 
-	StateVector2D p;
+	StateVector p;
 	double maxCFL = 0.5;
 
-	StateVector2D Dxi, Deta;
+	StateVector diffs;
 
 public:
 	TimeStepper();
@@ -27,6 +27,6 @@ public:
 	inline void setGrid(Grid * new_grid) { grid = new_grid; };
 	void setCFL(double cfl) { maxCFL = cfl; };
 
-	virtual void execute(StateMatrix2D * conservative, StateMatrix2D * xi_fluxes, StateMatrix2D * eta_fluxes) = 0;
+	virtual void execute(StateTensor * conservative, Eigen::Array<StateTensor *, 3, 1>) = 0;
 };
 
